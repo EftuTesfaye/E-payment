@@ -21,6 +21,15 @@ const ServiceProviderRegistrationForm = () => {
 
     if (!formData.serviceProviderBIN) {
       newErrors.serviceProviderBIN = 'Business Identification Number is required';
+    }else {
+      // Check if BIN already exists
+      (async () => {
+        const existingAgent = await (formData.serviceProviderBIN);
+    
+        if (existingAgent) {
+          newErrors.serviceProviderBIN = "service provider already exists";
+        }
+      })();
     }
 
     if (!formData.serviceProviderName) {
@@ -38,7 +47,7 @@ const ServiceProviderRegistrationForm = () => {
     if (!formData.BankAccountNumber) {
       newErrors.BankAccountNumber = 'Bank Account Number is required';
     }
-    
+
 
     if (!formData.phoneNumber) {
       newErrors.phoneNumber = "Phone Number is required";
