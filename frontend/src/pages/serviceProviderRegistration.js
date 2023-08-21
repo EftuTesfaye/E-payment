@@ -10,10 +10,10 @@ const ServiceProviderRegistrationForm = () => {
     servicesOffered: '',
     BankName: '',
     BankAccountNumber: '',
-    phoneNumber: '',
+    phoneNumber: '+251',
+    serviceProviderAuthorizationLetter:null
   });
 
-  const [file, setFile] = useState(null);
   const [errors, setErrors] = useState({});
 
   const validateForm = () => {
@@ -38,15 +38,29 @@ const ServiceProviderRegistrationForm = () => {
     if (!formData.BankAccountNumber) {
       newErrors.BankAccountNumber = 'Bank Account Number is required';
     }
+    
 
     if (!formData.phoneNumber) {
-      newErrors.phoneNumber = 'Phone Number is required';
-    } else if (!/^\+?\d+$/.test(formData.phoneNumber)) {
-      newErrors.phoneNumber = 'Phone Number is invalid';
+      newErrors.phoneNumber = "Phone Number is required";
+    } else if (!/^\+[0-9\s-()]+$/.test(formData.phoneNumber)) {
+      newErrors.phoneNumber = "Phone Number is invalid";
+    } else if (formData.phoneNumber.replace(/[^\d]/g, "").length < 12) {
+      newErrors.phoneNumber = "Phone Number must have at least 12 digits";
+    }
+
+  if (!formData.serviceProviderAuthorizationLetter) {
+      newErrors.serviceProviderAuthorizationLetter = "service Provider Authorization Letter Letter is required";
+    }else if (!isFileValid(formData.serviceProviderAuthorizationLetter)) {
+      newErrors.serviceProviderAuthorizationLetter = "Invalid file format. Only JPG, JPEG, PNG, or PDF files are allowed.";
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return Object.keys(newErrors).length === 0; // Return true if there are no errors
+  };
+
+  const isFileValid = (file) => {
+    const allowedFileTypes = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+    return allowedFileTypes.includes(file.type);
   };
 
   const handleChange = (e) => {
@@ -58,8 +72,11 @@ const ServiceProviderRegistrationForm = () => {
   };
 
   const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    setFile(selectedFile);
+    const file = e.target.files[0];
+    setFormData((prevData) => ({
+      ...prevData,
+      serviceProviderAuthorizationLetter: file,
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -73,7 +90,7 @@ const ServiceProviderRegistrationForm = () => {
         formDataToSend.append('BankName', formData.BankName);
         formDataToSend.append('BankAccountNumber', formData.BankAccountNumber);
         formDataToSend.append('phoneNumber', formData.phoneNumber);
-        formDataToSend.append('serviceProviderAuthorizationLetter', file);
+        formDataToSend.append('serviceProviderAuthorizationLetter', formData.serviceProviderAuthorizationLetter);
 
         await axios.post('http://localhost:3000/serviceprovider', formDataToSend);
         console.log('Registered successfully!');
@@ -157,7 +174,10 @@ const ServiceProviderRegistrationForm = () => {
         </div>
         <div>
           <label>Authorization Letter:</label>
-          <input type="file" name="authorizationLetter" onChange={handleFileChange} />
+          <input type="file" 
+          name="serviceProviderAuthorizationLetter" 
+          onChange={handleFileChange} />
+          {errors.serviceProviderAuthorizationLetter && <span className="error-message">{errors.serviceProviderAuthorizationLetter}</span>}
         </div>
         <button type="submit">Submit</button>
       </div>
