@@ -1,4 +1,3 @@
-// admin ageny and service ...login ...reg...
 
 // Import necessary packages and modules
 const express = require('express');
@@ -11,7 +10,7 @@ var corOptions = {
 }
 
 //middleware
-app.use(cors(corOptions))
+app.use(cors())
 app.use(bodyParser.json())
 app.use(express.json())
 app.use(express.urlencoded({extended : true}))
@@ -26,18 +25,19 @@ db.sequelize.sync({force: false })
 }); 
 
 // Import controllers
-const billController = require('./controller/BillController.js')
+const billController = require('./controller/billController.js')
 const serviceController = require('./controller/serviceProviderController.js')
-const paymentController = require('./controller/PaymentController');
-const userController = require('./controller/UserController.js');
+const paymentController = require('./controller/paymentController');
+const userController = require('./controller/userController.js');
 const AgentContoller = require('./controller/agentController.js');
 // Import routes
 
 const billsRouter = require('./routes/billRoute.js');
-const serviceProvidersRouter = require('./routes/serviceproviderRouter');
+const serviceProvidersRouter = require('./routes/serviceProviderRoute.js');
 const paymentRouter = require('./routes/paymentRoute.js');
 const usersRouter = require('./routes/userRoute.js');
 const AgentsRouter = require('./routes/agentRoute.js');
+const AdminRouter = require('./routes/AdminRoutes.js')
 
 // Mount routes
 app.use('/bills', billsRouter);
@@ -45,6 +45,7 @@ app.use('/serviceprovider', serviceProvidersRouter);
 app.use('/payment', paymentRouter);
 app.use('/Users', usersRouter);
 app.use('/agent', AgentsRouter);
+app.use('/api/admin', AdminRouter);
 app.use ('/Images',express.static('./Images'))
 
 //testing api
@@ -56,7 +57,7 @@ app.post('/',(req,res)=>{
 })
 
 //Port
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3000
 
 // start server
 app.listen(PORT, () => {
