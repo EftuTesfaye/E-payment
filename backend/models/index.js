@@ -27,7 +27,7 @@ db.sequelize = sequelize
 
 db.Bill = require('./billModel.js')(sequelize, Sequelize);
 db.Agents = require('./agentModel.js')(sequelize, Sequelize);
-db.User = require('./UserModel.js')(sequelize, Sequelize);
+db.User = require('./userModel.js')(sequelize, Sequelize);
 db.ServiceProviders = require('./serviceProviderModel.js')(sequelize, Sequelize);
 db.payment = require('./paymentModel.js')(sequelize, Sequelize);
 
@@ -43,53 +43,100 @@ const UserServiceProvider = sequelize.define('userServiceProvider', {});
 
 
 // Define associations
-db.User.belongsToMany(db.Agents, { through: UserAgent,
-as: "Agents",
-  foreignKey: "UserID"});
-
-db.Agents.belongsToMany(db.User, { through: UserAgent, 
-  as: "User",
-  foreignKey: "agentBIN"});
-
-db.Agents.belongsToMany(db.ServiceProviders, { through: AgentServiceProvider,
-  as: "ServiceProviders",
-  foreignKey: "agentBIN" });
-
-db.ServiceProviders.belongsToMany(db.Agents, { through: AgentServiceProvider,
+db.User.belongsToMany(db.Agents, {
+  through: UserAgent,
   as: "Agents",
-  foreignKey: "serviceProviderBIN"});
+  foreignKey: "UserID"
+});
 
-db.User.belongsToMany(db.ServiceProviders, { through: UserServiceProvider,
-  as: "ServiceProviders",
-  foreignKey: "UserID"});
-  
-db.ServiceProviders.belongsToMany(db.User, { through: UserServiceProvider,
+db.Agents.belongsToMany(db.User, {
+  through: UserAgent,
   as: "User",
-  foreignKey: "serviceProviderBIN"});
+  foreignKey: "agentBIN"
+});
 
-db.Agents.hasMany(db.payment,{
-foreignKey:'agentBIN',
-as:'payment'
-})
-db.payment.belongsTo(db.Agents,{
-foreignKey:'agentBIN',
-as:'payment'
+db.Agents.belongsToMany(db.ServiceProviders, {
+  through: AgentServiceProvider,
+  as: "ServiceProviders",
+  foreignKey: "agentBIN"
+});
 
-})
+db.ServiceProviders.belongsToMany(db.Agents, {
+  through: AgentServiceProvider,
+  as: "Agents",
+  foreignKey: "serviceProviderBIN"
+});
 
-db.User.hasMany(db.payment);
-db.payment.belongsTo(db.User);
+db.User.belongsToMany(db.ServiceProviders, {
+  through: UserServiceProvider,
+  as: "ServiceProviders",
+  foreignKey: "UserID"
+});
 
-db.ServiceProviders.hasMany(db.payment);
-db.payment.belongsTo(db.ServiceProviders);
+db.ServiceProviders.belongsToMany(db.User, {
+  through: UserServiceProvider,
+  as: "User",
+  foreignKey: "serviceProviderBIN"
+});
 
-db.ServiceProviders.hasMany(db.Bill);
-db.Bill.belongsTo(db.ServiceProviders);
+db.Agents.hasMany(db.payment, {
+  foreignKey: 'agentBIN',
+  as: 'payment'
+});
 
-db.payment.hasOne(db.Bill);
-db.Bill.belongsTo(db.payment);
+db.payment.belongsTo(db.Agents, {
+  foreignKey: 'agentBIN',
+  as: 'payment'
+});
 
-db.User.hasMany(db.Bill);
-db.Bill.belongsTo(db.User);
+db.User.hasMany(db.payment, {
+  foreignKey: 'UserID',
+  as: 'User'
+});
+
+db.payment.belongsTo(db.User, {
+  foreignKey: 'UserID',
+  as: 'User'
+});
+
+db.ServiceProviders.hasMany(db.payment, {
+  foreignKey: 'serviceProviderBIN',
+  as: 'ServiceProvidersPayments'
+});
+
+db.payment.belongsTo(db.ServiceProviders, {
+  foreignKey: 'serviceProviderBIN',
+  as: 'ServiceProviders'
+});
+
+db.ServiceProviders.hasMany(db.Bill, {
+  foreignKey: 'serviceProviderBIN',
+  as: 'ServiceProviderBills'
+});
+
+db.Bill.belongsTo(db.ServiceProviders, {
+  foreignKey: 'serviceProviderBIN',
+  as: 'ServiceProviders'
+});
+
+db.payment.hasOne(db.Bill, {
+  foreignKey: 'paymentID',
+  as: 'Bill'
+});
+
+db.Bill.belongsTo(db.payment, {
+  foreignKey: 'paymentID',
+  as: 'payment'
+});
+
+db.User.hasMany(db.Bill, {
+  foreignKey: 'UserID',
+  as: 'UserBills'
+});
+
+db.Bill.belongsTo(db.User, {
+  foreignKey: 'UserID',
+  as: 'User'
+});
 
 module.exports = db;
