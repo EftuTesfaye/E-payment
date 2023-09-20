@@ -1,5 +1,4 @@
 // about us page
-
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Switch } from 'react-router-dom';
 import companyLogo from '../image/logoimage.jpg';
