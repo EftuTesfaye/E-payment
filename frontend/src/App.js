@@ -24,11 +24,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/dashboard/:adminId" element={<Dashboard />} />
-        
-        
-        
-        
+        <Route path="/admin/dashboard/:adminId" element={<Dashboard />} /> 
         <Route
   path="/admin/agents"
   element={
