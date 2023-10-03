@@ -21,7 +21,6 @@ exports.create = asyncHandler(async (req, res) => {
     return;
   }
 
-
   // Calculate the total amount by adding service charges, amount due, and any additional charges
   const serviceCharges = parseFloat(req.body.serviceCharges);
   const amountDue = parseFloat(req.body.amountDue);
