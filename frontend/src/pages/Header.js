@@ -7,11 +7,7 @@ import './homePage.css';
 import { Form } from 'antd';
 import { Layout, Button, Input, Modal, message, Menu } from 'antd';
 import axios from 'axios';
-
-
 const { Sider } = Layout;
-
-
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(false);
