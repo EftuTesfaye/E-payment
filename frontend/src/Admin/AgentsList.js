@@ -2,186 +2,144 @@ import React, { useState, useEffect } from 'react';
 import { Table, Button, message, Modal, Form, Input, Upload } from 'antd';
 import { DeleteOutlined, EditOutlined, UploadOutlined } from '@ant-design/icons';
 import axios from 'axios';
-//import { useNavigate } from 'react-router-dom';
-import Dashboard from './Dashboard';
+import Dashboard from './dashboard';
 
-const AdminsList = ({ isLoggedIn, setIsLoggedIn }) => {
-  const [userData, setUserData] = useState([]);
+const AgentsList = ({ isLoggedIn, setIsLoggedIn }) => {
+  const [agentData, setAgentData] = useState([]);
   const [form] = Form.useForm();
   const [editMode, setEditMode] = useState(false);
-  const [user, setUser] = useState(null);
+  const [agent, setAgent] = useState(null);
+  const [agentAuthorizationLetterUrl, setgentAuthorizationLetterUrl] = useState();
   const [searchInput, setSearchInput] = useState('');
 
-  //const navigate = useNavigate();
 
   useEffect(() => {
-    fetchUsers();
+    fetchAgents();
   }, []);
 
-  const fetchUsers = async () => {
+  const fetchAgents = async () => {
     try {
-      const response = await axios.get('http://localhost:3000/Users');
-      setUserData(response.data);
+      const response = await axios.get('http://localhost:3001/agents');
+      setAgentData(response.data);
     } catch (error) {
-      message.error('Failed to fetch users.');
+      message.error('Failed to fetch agents.');
     }
   };
 
-  const handleEdit = (user) => {
-    form.setFieldsValue(user);
+  const handleEdit = (agent) => {
+    form.setFieldsValue(agent);
     setEditMode(true);
-    setUser(user);
+    setAgent(agent);
   };
-
   const handleSave = () => {
     Modal.confirm({
       title: 'Confirm Edit',
-      content: 'Are you sure you want to edit this user?',
+      content: 'Are you sure you want to edit this agent?',
       okText: 'Edit',
       okType: 'danger',
       cancelText: 'Cancel',
       onOk: () => {
-        // Get form values
         form.validateFields().then((values) => {
-          const updatedUser = { ...values, id: user.id };
-  
-          // Create FormData object
-          const formData = new FormData();
-          formData.append('ProfilePicture', values.ProfilePicture[0]); // Assuming only one file is selected
-  
-          // Update user data
+          const updatedAgent = { ...values };
           axios
-            .put(`http://localhost:3000/Users/${updatedUser.id}`, updatedUser)
+            .put(
+              `http://localhost:3001/agents/${updatedAgent.agentBIN}`,
+              updatedAgent
+            )
             .then((response) => {
               if (response.status === 200) {
-                // Upload file separately
-                axios
-                  .put(`http://localhost:3000/Users/${updatedUser.id}`, formData)
-                  .then((uploadResponse) => {
-                    if (uploadResponse.status === 200) {
-                      message.success('User data and file updated successfully.');
-                      const updatedData = userData.map((user) =>
-                        user.id === updatedUser.id ? updatedUser : user
-                      );
-                      setUserData(updatedData);
-                      setEditMode(false);
-                      form.resetFields();
-                    } else {
-                      message.error('Failed to upload file.');
-                    }
-                  })
-                  .catch((error) => {
-                    message.error('Failed to upload file.');
-                  });
+                message.success('agent data updated successfully.');
+                window.location.href = window.location.href;
+                const updatedData = agentData.map((sp) =>
+                  sp.agentBIN === updatedAgent.agentBIN
+                    ? updatedAgent
+                    : sp
+                );
+                setAgentData(updatedData);
+                setEditMode(false);
+                form.resetFields();
               } else {
-                message.error('Failed to update user data.');
+                message.error('Failed to update agent data.');
               }
             })
             .catch((error) => {
-              message.error('Failed to update user data.');
+              message.error('Failed to update agent data.');
             });
         });
       },
     });
   };
 
-  const handleDelete = (userId) => {
+
+  const handleDelete = (agentBIN) => {
     Modal.confirm({
       title: 'Confirm Delete',
-      content: 'Are you sure you want to delete this user?',
+      content: 'Are you sure you want to delete this agent?',
       okText: 'Delete',
       okType: 'danger',
       cancelText: 'Cancel',
       onOk: () => {
         axios
-          .delete(`http://localhost:3000/Users/${userId}`)
+          .delete(`http://localhost:3001/agents/${agentBIN}`) // Use agentBIN as the primary key
           .then((response) => {
             if (response.status === 200) {
-              message.success('User deleted successfully.');
-              const updatedData = userData.filter((user) => user.id !== userId);
-              setUserData(updatedData);
+              message.success('Agent deleted successfully.');
+              const updatedData = agentData.filter((agent) => agent.agentBIN !== agentBIN); // Use agentBIN to filter out the deleted agent
+              setAgentData(updatedData);
             } else {
-              message.error('Failed to delete user.');
+              message.error('Failed to delete agent.');
             }
           })
           .catch((error) => {
-            message.error('Failed to delete user.');
+            message.error('Failed to delete agent.');
           });
       },
     });
   };
-  const handleSearch = (value) => {
-    setSearchInput(value);
-  };
-
-  const filteredUsers = userData.filter((user) =>
-  user.Role === 'Admin' &&
-  (user.UserName.toLowerCase().includes(searchInput.toLowerCase()) ||
-    user.FirstName.toLowerCase().includes(searchInput.toLowerCase()) ||
-    user.LastName.toLowerCase().includes(searchInput.toLowerCase()) ||
-    user.Email.toLowerCase().includes(searchInput.toLowerCase()) ||
-    (typeof user.PhoneNumber === 'string' &&
-      user.PhoneNumber.toLowerCase().includes(searchInput.toLowerCase())))
-);
 
   const columns = [
     {
-      title: 'First Name',
-      dataIndex: 'FirstName',
-      key: 'FirstName',
+      title: 'Agent BIN',
+      dataIndex: 'agentBIN',
+      key: 'agentBIN',
     },
     {
-      title: 'Last Name',
-      dataIndex: 'LastName',
-      key: 'LastName',
+      title: 'Agent Name',
+      dataIndex: 'agentName',
+      key: 'agentName',
     },
     {
-      title: 'Gender',
-      dataIndex: 'Gender',
-      key: 'Gender',
+      title: 'Agent Email',
+      dataIndex: 'agentEmail',
+      key: 'agentEmail',
     },
     {
-      title: 'User Name',
-      dataIndex: 'UserName',
-      key: 'UserName',
-    },
-    {
-      title: 'Email',
-      dataIndex: 'Email',
-      key: 'Email',
+      title: 'Services Offered',
+      dataIndex: 'servicesOffered',
+      key: 'servicesOffered',
     },
     {
       title: 'Phone Number',
-      dataIndex: 'PhoneNumber',
-      key: 'PhoneNumber',
+      dataIndex: 'phoneNumber',
+      key: 'phoneNumber',
     },
     {
-      title: 'Address',
-      dataIndex: 'Address',
-      key: 'Address',
-    },
-    {
-      title: 'Role',
-      dataIndex: 'Role',
-      key: 'Role',
-    },
-    {
-      title: 'Profile Image',
-      dataIndex: 'ProfilePicture',
-      key: 'ProfilePicture',
-      render: (_, user) => (
+      title: 'Authorization Letter',
+      dataIndex: 'agentAuthorizationLetter',
+      key: 'agentAuthorizationLetter',
+      render: (_, agent) => (
         <div>
-          {user.ProfilePicture && (
+          {agent.agentAuthorizationLetter && (
             <div>
-              <a href={`http://localhost:3000/${user.ProfilePicture}`} download>
-                Profile picture
+              <a href={`http://localhost:3001/${agent.agentAuthorizationLetter}`} download>
+                Authorization Letter
               </a>
               <Button
                 type="primary"
                 onClick={() => {
                   const downloadLink = document.createElement('a');
-                  downloadLink.href = `http://localhost:3000/${user.ProfilePicture}`;
-                  downloadLink.download = 'Profile picture';
+                  downloadLink.href = `http://localhost:3001/${agent.agentAuthorizationLetter}`;
+                  downloadLink.download = 'Authorization Letter';
                   downloadLink.target = '_blank';
                   downloadLink.click();
                 }}
@@ -194,76 +152,82 @@ const AdminsList = ({ isLoggedIn, setIsLoggedIn }) => {
       ),
     },
     {
-      title: 'Actions',
-      dataIndex: 'actions',
-      key: 'actions',
-      render: (_, user) => (
+      title: 'Action',
+      key: 'action',
+      render: (_, agent) => (
         <div>
-          <Button icon={<EditOutlined />} onClick={() => handleEdit(user)}>
-            Edit
-          </Button>
-          <Button icon={<DeleteOutlined />} onClick={() => handleDelete(user.id)} danger>
-            Delete
-          </Button>
+          <Button onClick={() => handleEdit(agent)} icon={<EditOutlined />} type="danger">Edit</Button>
+          <Button onClick={() => handleDelete(agent.agentBIN)} icon={<DeleteOutlined />} type="danger">Delete</Button>
         </div>
       ),
     },
   ];
 
+  const handleSearch = (value) => {
+    setSearchInput(value);
+    if (value === '') {
+      // If search input is empty, display the whole list
+      fetchAgents();
+    } else {
+
+    // Filter agentData based on search input
+    const filteredAgents = agentData.filter((agent) => {
+      const agentName = agent.agentName.toLowerCase();
+      const agentEmail = agent.agentEmail.toLowerCase();
+      const phoneNumber = agent.phoneNumber.toLowerCase();
+      const searchValue = value.toLowerCase();
+
+      return (
+        agentName.includes(searchValue) ||
+        agentEmail.includes(searchValue) ||
+        phoneNumber.includes(searchValue)
+      );
+    });
+
+    setAgentData(filteredAgents);
+  }
+  };
+
+
   return (
     <Dashboard isLoggedIn={isLoggedIn} setIsLoggedIn={setIsLoggedIn} content={
       <div>
-       <h1>Admin List</h1>
+        <h1>Agents List</h1>
         <Input.Search
-          placeholder="Search Admin"
+          placeholder="Search agents"
           value={searchInput}
           onChange={(e) => handleSearch(e.target.value)}
           style={{ marginBottom: '16px' }}
         />
-        <Table
-          dataSource={filteredUsers}
-          columns={columns}
-          rowKey="id"
-          scroll={{ x: true }}
-        />
+
+        <Table dataSource={agentData} columns={columns} scroll={{ x: true }} />
+
         <Modal
-          title="Edit User"
+          title={editMode ? 'Edit Agent' : 'Create Agent'}
           visible={editMode}
           onCancel={() => {
             setEditMode(false);
             form.resetFields();
           }}
-          onOk={handleSave}
+          footer={null}
         >
           <Form form={form}>
-            <Form.Item name="UserID" label="UserID">
+            <Form.Item name="agentBIN" label="Agent BIN">
               <Input />
             </Form.Item>
-            <Form.Item name="FirstName" label="First Name">
+            <Form.Item name="agentName" label="Agent Name">
               <Input />
             </Form.Item>
-            <Form.Item name="LastName" label="Last Name">
+            <Form.Item name="agentEmail" label="Agent Email">
               <Input />
             </Form.Item>
-            <Form.Item name="Gender" label="Gender">
+            <Form.Item name="servicesOffered" label="Services Offered">
               <Input />
             </Form.Item>
-            <Form.Item name="UserName" label="User Name">
+            <Form.Item name="phoneNumber" label="Phone Number">
               <Input />
             </Form.Item>
-            <Form.Item name="Email" label="Email">
-              <Input type="email" />
-            </Form.Item>
-            <Form.Item name="PhoneNumber" label="Phone Number">
-              <Input type="tel" />
-            </Form.Item>
-            <Form.Item name="Address" label="Address">
-              <Input />
-            </Form.Item>
-            <Form.Item name="Role" label="Role">
-              <Input />
-            </Form.Item>
-            <Form.Item name="ProfilePicture" label="Profile Picture">
+            <Form.Item name="agentAuthorizationLetter" label="Agent Authorization Letter">
               <Upload accept=".jpeg, .jpg, .png, .gif" beforeUpload={() => false}>
                 <Button icon={<UploadOutlined />}>Select File</Button>
               </Upload>
@@ -273,8 +237,9 @@ const AdminsList = ({ isLoggedIn, setIsLoggedIn }) => {
             </Button>
           </Form>
         </Modal>
-      </div>} />
+      </div>}
+    />
   );
 };
 
-export default AdminsList;
+export default AgentsList;
