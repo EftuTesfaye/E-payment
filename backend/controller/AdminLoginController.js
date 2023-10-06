@@ -25,7 +25,6 @@ async function adminLogin(req, res) {
 
     // Compare the provided password with the hashed password in the database
     const isPasswordValid = await bcrypt.compare(Password, user.Password);
-
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid password' });
     }
@@ -39,7 +38,6 @@ async function adminLogin(req, res) {
     res.status(500).json({ error: 'Internal server error' });
   }
 }
-
 module.exports = {
   adminLogin,
 };
