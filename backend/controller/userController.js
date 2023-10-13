@@ -3,26 +3,37 @@ const db = require('../models');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const multer = require('multer');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+const nodemailer = require('nodemailer');
 
-const User = db.User;
 
+// Import required models
+const { User, Payment, Bill, Agents, ServiceProviders, UserServiceProvider } = require('../models');
+
+const { Op } = require('sequelize');
 // Create and save a new user
-exports.create = asyncHandler(async (req, res) => {
+exports.create = async (req, res) => {
   // Validate request
-  if (
-    !req.body.UserID ||
-    !req.body.FirstName ||
-    !req.body.LastName ||
-    !req.body.Gender ||
-    !req.body.UserName ||
-    !req.body.Email ||
-    !req.body.Password ||
-    !req.body.PhoneNumber ||
-    !req.body.Address||   
-    !req.body.Role
-  ) {
+  const requiredFields = [
+    'UserID',
+    'FirstName',
+    'LastName',
+    'Gender',
+    'UserName',
+    'Email',
+    'Password',
+    'PhoneNumber',
+    'Address',
+  ];
+
+ // Check if any required fields are missing in the request body
+ const missingFields = requiredFields.filter((field) => !req.body[field]);
+
+  if (missingFields.length > 0) {
     res.status(400).send({
-      message: 'Fields cannot be empty',
+      message: `${missingFields.join(', ')} cannot be empty`,
     });
     return;
   }
@@ -56,48 +67,432 @@ exports.create = asyncHandler(async (req, res) => {
     PhoneNumber: req.body.PhoneNumber,
     Address: req.body.Address,
     Role: req.body.Role,
+    ProfilePicture: req.file ? req.file.path : null,
+    serviceProviderBIN: req.body.serviceProviderBIN,
   };
 
-  // Save user in the database
-  const data = await User.create(user);
-  res.send(data);
+  try {
+    // Save user in the database
+    const createdUser = await User.create(user);
+
+    // Add associations with payment, bill, and agents
+    if (req.body.paymentId) {
+      // Find the payment instance by its ID
+      const paymentInstance = await Payment.findByPk(req.body.paymentId);
+      if (paymentInstance) {
+        // Add the payment instance to the user's payments
+        await createdUser.addPayments(paymentInstance);
+      }
+    }
+
+    if (req.body.billIds && req.body.billIds.length > 0) {
+      // Find all bills that match the given IDs
+      const bills = await Bill.findAll({
+        where: {
+          id: {
+            [Op.in]: req.body.billIds,
+          },
+        },
+      });
+      if (bills) {
+         // Add the bills to the user's bills
+        await createdUser.addBill(bills);
+      }
+    }
+
+    if (req.body.agentBINs && req.body.agentBINs.length > 0) {
+      // Find all agents that match the given BINs
+      const agentBINs = req.body.agentBINs;
+      const agents = await Agents.findAll({
+        where: {
+          agentBIN: {
+            [Op.in]: agentBINs,
+          },
+        },
+      });
+      if (agents.length !== agentBINs.length) {
+        // Check if all requested agents were found
+        const existingAgents = agents.map((agent) => agent.agentBIN);
+        const missingAgents = agentBINs.filter((agentBIN) => !existingAgents.includes(agentBIN));
+        res.status(404).send({
+          message: `Agents with IDs ${missingAgents.join(', ')} not found`,
+        });
+        return;
+      }
+       // Add the agents to the user's agents
+      await createdUser.addAgents(agents);
+    }
+
+    if (req.body.serviceProviderBINs && req.body.serviceProviderBINs.length > 0) {
+        // Find all service providers that match the given BINs
+      const serviceProviderBINs = req.body.serviceProviderBINs;
+      const serviceProviders = await ServiceProviders.findAll({
+        where: {
+          serviceProviderBIN: {
+            [Op.in]: serviceProviderBINs,
+          },
+        },
+      });
+      if (serviceProviders.length !== serviceProviderBINs.length) {
+         // Check if all requested service providers were found
+        const existingServiceProviders = serviceProviders.map((sp) => sp.serviceProviderBIN);
+        const missingServiceProviders = serviceProviderBINs.filter(
+          (sp) => !existingServiceProviders.includes(sp)
+        );
+        res.status(404).send({
+          message: `Service providers with IDs ${missingServiceProviders.join(', ')} not found`,
+        });
+        return;
+      }
+       
+    
+      // Generate random unique serviceNo
+      const generatedServiceNos = new Set();
+      while (generatedServiceNos.size < serviceProviders.length) {
+        const randomServiceNo = Math.floor(100000 + Math.random() * 900000);
+        generatedServiceNos.add(randomServiceNo);
+      }
+    
+      // Create associations and add serviceNo to the junction table
+      for (let i = 0; i < serviceProviders.length; i++) {
+        const serviceProvider = serviceProviders[i];
+        const serviceNo = Array.from(generatedServiceNos)[i]; // Convert Set to Array and access by index
+        await createdUser.addServiceProviders(serviceProvider, {
+          through: {
+            serviceNo: serviceNo,
+          },
+        });
+      }
+    }
+       // Find the user by ID and include related models: ServiceProviders, Payments, Bills, and Agents
+    const data = await User.findOne({
+      where: {
+        id: createdUser.id,
+      }, 
+      include: [
+        {
+          model: ServiceProviders,
+          as: 'ServiceProviders',
+          attributes: ['serviceProviderBIN', 'serviceProviderName'],
+          through: { attributes: ['serviceNo'] }, // Include the serviceNo in the through table
+        },
+        {
+          model: Payment,
+          as: 'Payments',
+        },
+        {
+          model: Bill,
+          as: 'Bills',
+        },
+        {
+          model: Agents,
+          as: 'Agents',
+        },
+      
+      ],
+    });
+// Send the user data as the response
+    res.send(data);
+  } catch (error) {
+    // Handle validation errors
+    if (error.name === 'SequelizeValidationError') {
+      const errors = error.errors.map((err) => err.message);
+      res.status(400).send({
+        message: 'Validation error',
+        errors: errors,
+      });
+    } else {
+      // Handle other errors
+      console.error('Error saving user:', error);
+      res.status(500).send({
+        message: 'Error saving user',
+      });
+    }
+  }
+};
+
+// Retrieve all users
+exports.findAll = async (req, res) => {
+  try {
+    // Find all users and include related models: Payments, Bills, Agents, and ServiceProviders
+    const users = await User.findAll({
+      include: [
+        {
+          model: Payment,
+          as: 'Payments',
+        },
+        {
+          model: Bill,
+          as: 'Bills',
+        },
+        {
+          model: Agents,
+          as: 'Agents',
+        },
+        {
+          model: ServiceProviders,
+          as: 'ServiceProviders',
+        },
+      ],
+    });
+      // Send the users data as the response
+    res.send(users);
+  } catch (error) {
+    console.error('Error retrieving users:', error);
+    res.status(500).send({
+      message: 'Error retrieving users',
+    });
+  }
+};
+// Retrieve a user by serviceNo and serviceProviderBIN
+exports.findOneByServiceNo = asyncHandler(async (req, res) => {
+  const serviceNo = req.params.serviceNo;
+  const serviceProviderBIN = req.params.serviceProviderBIN;
+
+  try {
+       // Find the user by serviceNo and serviceProviderBIN, and include related models: ServiceProviders, Payments, Bills, and Agents
+    const user = await db.User.findOne({
+     include: [
+         {
+          model: db.ServiceProviders,
+          as: 'ServiceProviders',
+          through: {
+            model: db.UserServiceProvider,
+            as: 'userServiceProvider',
+            where: { serviceNo: serviceNo,
+            serviceProviderBIN: serviceProviderBIN },
+            required: true,
+          },
+        },
+        {
+          model: Payment,
+          as: 'Payments',
+        },
+        {
+          model: Bill,
+          as: 'Bills',
+        },
+        {
+          model: Agents,
+          as: 'Agents',
+        },
+      ],
+      distinct: true 
+    });
+// If the user is not found, return a 404 error
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+ // Send the user data as the response
+    res.send(user);
+  } catch (error) {
+    console.error('Error finding user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// Retrieve all users from the database
-exports.findAll = asyncHandler(async (req, res) => {
-  const data = await User.findAll();
-  res.send(data);
-});
 
 // Find a single user by id
 exports.findOne = asyncHandler(async (req, res) => {
-  const id = req.params.id;
-
-  const data = await User.findByPk(id);
-  if (!data) {
-    res.status(404).send({
-      message: `User with id=${id} not found`,
+  try {
+    const id = req.params.id;
+// Find the user by id and include related models: Payments, Bills, Agents, and ServiceProviders
+    const users = await User.findByPk(id, {
+      include: [
+        {
+          model: Payment,
+          as: 'Payments',
+        },
+        {
+          model: Bill,
+          as: 'Bills',
+        },
+        {
+          model: Agents,
+          as: 'Agents',
+        },
+        {
+          model: ServiceProviders,
+          as: 'ServiceProviders',
+        },
+      ],
     });
-  } else {
-    res.send(data);
+    res.send(users);
+  } catch (error) {
+    console.error('Error retrieving users:', error);
+    res.status(500).send({
+      message: 'Error retrieving users',
+    });
   }
 });
+
+
 
 // Update a user by id
 exports.update = asyncHandler(async (req, res) => {
   const id = req.params.id;
 
-  const [num] = await User.update(req.body, {
-    where: { id: id },
-  });
+  try {
+    // Find the user by ID
+    const user = await User.findByPk(id,
+      );
 
-  if (num === 1) {
-    res.send({
-      message: 'User was updated successfully.',
-    });
-  } else {
-    res.send({
-      message: `Cannot update user with id=${id}. User not found or req.body is empty!`,
+    if (!user) {
+      res.status(404).send({
+        message: `User with id=${id} not found`,
+      });
+    } else {
+      // Update the user fields based on the request body
+      user.FirstName = req.body.FirstName || user.FirstName;
+      user.LastName = req.body.LastName || user.LastName;
+      user.Gender = req.body.Gender || user.Gender;
+      user.UserName = req.body.UserName || user.UserName;
+      user.Email = req.body.Email || user.Email;
+      user.PhoneNumber = req.body.PhoneNumber || user.PhoneNumber;
+      user.Address = req.body.Address || user.Address;
+      user.Role = req.body.Role || user.Role;
+
+      // Update the profile picture if provided in the request
+      if (req.file) {
+        user.ProfilePicture = req.file.path;
+      }
+
+      // Update the password if provided in the request
+      if (req.body.Password) {
+        const hashedPassword = await bcrypt.hash(req.body.Password, 10);
+        user.Password = hashedPassword;
+      }
+      try {
+
+        // Add associations with payment, bill, and Agents
+        if (req.body.paymentId) {
+          const paymentInstance = await Payment.findByPk(req.body.paymentId);
+          if (paymentInstance) {
+            await user.setPayment(paymentInstance);
+          }
+        }
+
+        if (req.body.billIds && req.body.billIds.length > 0) {
+          const bills = await Bill.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.billIds,
+              },
+            },
+          });
+          if (bills) {
+            await user.addBill(bills);
+          }
+        }
+
+        if (req.body.agentBINs && req.body.agentBINs.length > 0) {
+          const agents = await Agents.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.agentBINs,
+              },
+            },
+          });
+          if (agents) {
+            await user.addAgents(agents);
+          }
+        }
+        if (req.body.serviceProviderBINs && req.body.serviceProviderBINs.length > 0) {
+          const serviceProvider = await ServiceProviders.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.serviceProviderBINs,
+              },
+            },
+          });
+          if (serviceProvider) {
+            await createdUser.setServiceProviders(serviceProvider);
+            await createdUser.addServiceProviders(serviceProvider, {
+              through: UserServiceProvider,
+              UserId: createdUser.id,
+              serviceProviderBIN: req.body.serviceProviderBIN,
+            });
+          }
+          else {
+            console.log('Error ');
+          }
+        }
+
+
+        // Remove associations with payment, bill, and agents
+        if (req.body.removePayment) {
+          await user.setPayments(null);
+        }
+
+        if (req.body.removeBillIds && req.body.removeBillIds.length > 0) {
+          // Find the bills to be removed
+          const bills = await Bill.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.removeBillIds,
+              },
+            },
+          });
+          if (bills) {
+            // Remove the association with the bills
+            await user.removeBill(bills);
+          }
+        }
+
+        if (req.body.removeAgentBINs && req.body.removeAgentBINs.length > 0) {
+          // Find the agents to be removed
+          const agents = await Agents.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.removeAgentBINs,
+              },
+            },
+          });
+          if (agents) {
+            // Remove the association with the agents
+            await user.removeAgents(agents);
+          }
+        } if (req.body.serviceProviderBINs && req.body.serviceProviderBINs.length > 0) {
+           // Find the service providers to be added
+          const serviceProviders = await ServiceProviders.findAll({
+            where: {
+              id: {
+                [Op.in]: req.body.serviceProviderBINs,
+              },
+            },
+          });
+          if (serviceProviders) {
+            // Add the associations with the service providers
+            await createdUser.addServiceProviders(serviceProviders);
+            
+            // Add entries to the junction table
+            await createdUser.addServiceProviders(serviceProviders, {
+              through: {
+                UserId: createdUser.id,
+                serviceProviderBIN: serviceProviders.map(sp => sp.id),
+              },
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).send({
+          message: 'Error updating user',
+        });
+      }
+
+      // Save the updated user
+      await user.save();
+
+      res.send({
+        message: 'User was updated successfully.',
+        user: user,
+      });
+    }
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).send({
+      message: 'Error updating user',
     });
   }
 });
@@ -106,6 +501,7 @@ exports.update = asyncHandler(async (req, res) => {
 exports.delete = asyncHandler(async (req, res) => {
   const id = req.params.id;
 
+   // Delete the user from the database
   const num = await User.destroy({
     where: { id: id },
   });
@@ -121,29 +517,333 @@ exports.delete = asyncHandler(async (req, res) => {
   }
 });
 
-// User login auth
-exports.login = asyncHandler(async (req, res) => {
+// User login
+exports.login = async (req, res) => {
+  // Validate request
+  const { identifier, Password } = req.body;
+
+  if (!identifier || !Password) {
+    res.status(400).send({
+      message: 'Username/Email and password are required',
+    });
+    return;
+  }
+
   try {
-    const { Email, Password } = req.body;
+    // Find the user by email or username
     const user = await User.findOne({
-      where: { Email },
+      where: {
+        [Op.or]: [{ Email: identifier }, { UserName: identifier }],
+      },
+      include: [
+        // Include the required associations
+        {
+          model: ServiceProviders,
+          as: 'ServiceProviders',
+          through: { attributes: ['serviceNo'] }
+        },
+        {
+          model: Payment,
+          as: 'Payments',
+        },
+        {
+          model: Bill,
+          as: 'Bills',
+        },
+        {
+          model: Agents,
+          as: 'Agents',
+        },
+      ],
     });
 
     if (!user) {
-      res.status(404).json({ error: 'User not found' });
-    } else {
-      const passwordMatch = await bcrypt.compare(Password, user.Password);
+      res.status(404).send({
+        message: 'User not found',
+      });
+      return;
+    }
 
-      if (!passwordMatch) {
-        res.status(401).json({ error: 'Incorrect password' });
-      } else {
-        const token = jwt.sign({ userId: user.id }, process.env.TOKEN_SECRET, {
-          expiresIn: '1h',
-        });
-        res.status(200).json({ message: 'Login successful', token });
-      }
+    // Compare the provided password with the hashed password stored in the database
+    const isPasswordValid = await bcrypt.compare(Password, user.Password);
+
+    if (!isPasswordValid) {
+      res.status(401).send({
+        message: 'Invalid password',
+      });
+      return;
+    }
+
+    // Generate a JWT token
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '1h', // Token expiration time
+    });
+
+    res.send({
+      message: 'Login successful',
+      token: token,
+      user: user,
+    });
+  } catch (error) {
+    console.error('Error during login:', error);
+    res.status(500).send({
+      message: 'Error during login',
+    });
+  }
+};
+
+// upload image
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'Images')// Set the destination folder for uploaded images
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Set the filename for uploaded images
+
+  }
+})
+// Handle image upload
+exports.upload = multer({
+  storage: storage,// Set the storage configuration
+  limits: { fileSize: '1000000' },// Limit the file size to 1MB
+  fileFilter: (req, file, cb) => {
+    const fileTypes = /jpeg|jpg|png|gif/;
+    const mimeType = fileTypes.test(file.mimetype);// Check if the file mime type is valid
+    const extname = fileTypes.test(path.extname(file.originalname));// Check if the file extension is valid
+    if (mimeType && extname) {// If both mime type and extension are valid
+      return cb(null, true);
+    }
+    cb('provide the proper format');// Reject the file if the format is invalid
+  }
+}).single('ProfilePicture');// Handle a single file with the field name 'ProfilePicture'
+
+
+
+// Request password reset
+exports.requestPasswordReset = asyncHandler(async (req, res) => {
+  // Validate request
+  if (!req.body.Email) {
+    res.status(400).send({
+      message: 'Email is required',
+    });
+    return;
+  }
+
+  // Check if user exists
+  const user = await User.findOne({
+    where: {
+      Email: req.body.Email,
+    },
+  });
+
+  if (!user) {
+    res.status(404).send({
+      message: 'User not found',
+    });
+    return;
+  }
+
+  // Generate a unique reset token
+  const resetToken = uuidv4();
+
+  // Save the reset token and its expiration date in the user's record
+  user.resetToken = resetToken;
+  user.resetTokenExpiration = Date.now() + 3600000; // Token expires in 1 hour
+  await user.save();
+
+  // Send password reset email to the user
+  const senderEmail = "bezawitseb@gmail.com";
+  const senderPassword = "ghimzsimdynjbsto";
+  const recipientEmail = req.body.Email;
+  const subject = 'Password Reset Request';
+  const resetLink = `http://localhost:3001/Users/UpdatePassword#/${resetToken}`;
+  const message =` Dear ${user.FirstName},\n\nWe received a request to reset your password.\n\nTo reset your password, click on the following link:\n${resetLink}\n\nIf you did not request a password reset, please ignore this email.\n\nBest regards,\nYourApp Team`;
+
+  sendEmail(senderEmail, senderPassword, recipientEmail, subject, message);
+
+  res.send({
+    message: 'Password reset email sent',
+  });
+});
+
+// Function to send an email
+async function sendEmail(senderEmail, senderPassword, recipientEmail, subject, message) {
+  try {
+    // Create a transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: "bezawitseb@gmail.com",
+        pass: "ghimzsimdynjbsto",
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+    
+
+    // Define the email options
+    const mailOptions = {
+      from: senderEmail,
+      to: recipientEmail,
+      subject: subject,
+      text: message,
+    };
+
+    // Send the email
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.messageId);
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+}
+
+
+
+
+// Verify user
+exports.verifyUser = async (req, res) => {
+  // Validate request
+  const userId = req.params.userId;
+  const verificationCode = req.params.verificationCode;
+
+  if (!userId || !verificationCode) {
+    res.status(400).send({
+      message: 'User ID and verification code are required',
+    });
+    return;
+  }
+
+  try {
+    // Find the user based on the provided userId
+    const user = await User.findByPk(userId);
+  
+    if (!user) {
+      res.status(404).send({
+        message: 'User not found',
+      });
+      return;
+    }
+
+    // Send verification code email to the user
+    const senderEmail = 'bezawitseb@gmail.com';
+    const senderPassword = 'ghimzsimdynjbsto';
+    const recipientEmail = user.Email;
+    const subject = 'Email Verification';
+    const message = `Dear ${user.FirstName},\n\nYour verification code is: ${verificationCode}\n\nPlease use this code to verify your email.\n\nBest regards,\nYourApp Team`;
+
+    await sendEmail(senderEmail, senderPassword, recipientEmail, subject, message);
+
+    res.send({
+      message: 'User verified successfully',
+    });
+  } catch (error) {
+    console.error('Error finding user:', error);
+    res.status(500).send({
+      message: 'Internal server error',
+    });
+  }
+};
+
+// Function to send an email
+async function sendEmail(senderEmail, senderPassword, recipientEmail, subject, message) {
+  try {
+    // Create a transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      port:465,
+      secure:true,
+      logger:true,
+      debug:true,
+      secureConnection:false,
+      auth: {
+        user: 'bezawitseb@gmail.com',
+        pass: 'ghim zsim dynj bsto',
+      },
+      tls: {
+        rejectUnAuthorized: true,
+      },
+    });
+
+    // Define the email options
+    const mailOptions = {
+      from: 'bezawitseb@gmail.com',
+      to: recipientEmail,
+      subject: subject,
+      text: message,
+    };
+
+    // Send the email
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Email sent:', info.messageId);
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+}
+
+
+// Verify reset password token
+exports.verifyResetToken = asyncHandler(async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    // Check if token is valid and not expired
+    const user = await User.findOne({
+      where: {
+        resetToken: token,
+        resetTokenExpiration: { [db.Sequelize.Op.gt]: Date.now() },
+      },
+    });
+
+    if (!user) {
+      res.status(400).json({ error: 'Invalid or expired token' });
+    } else {
+      res.status(200).json({ message: 'Token is valid' });
     }
   } catch (error) {
-    res.status(500).json({ error: 'Failed to login user', message: error.message });
+    res.status(500).json({ error: 'Failed to verify token', message: error.message });
   }
 });
+
+exports.updatePasswordWithToken = asyncHandler(async (req, res) => {
+  try {
+    const { Email, Password } = req.body;
+
+    if (!Email) {
+      res.status(400).json({ error: 'Email is required' });
+      return;
+    }
+
+    // Check if email is valid
+    const user = await User.findOne({
+      where: {
+        Email: Email,
+      },
+    });
+
+    if (!user) {
+      res.status(400).json({ error: 'User not found' });
+      return;
+    }
+    console.log('Email:', Email);
+console.log('Password:', Password);
+console.log('', user);
+
+    // Generate salt and hash the password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(Password, salt);
+
+    // Update user's password
+    user.Password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiration = null;
+    user.updatedAt = new Date(); // Set updatedAt field
+    await user.save();
+
+    res.status(200).json({ message: 'Password updated successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update password', message: error.message });
+  }
+});
+
+
