@@ -4,7 +4,6 @@ import './styles.css';
 
 const AgentDetail = ({ isLoggedIn, setIsLoggedIn }) => {
   const [agentData, setAgentData] = useState([]);
-
   useEffect(() => {
     fetchAgents();
   }, []);
@@ -23,7 +22,6 @@ const AgentDetail = ({ isLoggedIn, setIsLoggedIn }) => {
     // You can perform any action here based on the selected agent
     console.log('Selected agent:', agent);
   };
-
   return (
     <div className="container">
       <div className='class'>
